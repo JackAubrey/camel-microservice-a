@@ -11,7 +11,7 @@ import java.time.LocalTime;
 import static org.slf4j.LoggerFactory.getLogger;
 
 @Component
-@ConditionalOnProperty(name = "routers.first-router.on", matchIfMissing = true, havingValue = "true")
+@ConditionalOnProperty(name = "routers.first-router.on", matchIfMissing = false, havingValue = "true")
 public class MyFirstTimerRouter extends RouteBuilder {
     private final GetCurrentTimeBean getCurrentTimeBean;
     private final SimpleLoggerComponent simpleLoggerComponent;

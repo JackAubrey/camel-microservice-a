@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "routers.file-router.on", matchIfMissing = true, havingValue = "true")
+@ConditionalOnProperty(name = "routers.file-router.on", matchIfMissing = false, havingValue = "true")
 public class MyFileRouter extends RouteBuilder {
 
     /**
