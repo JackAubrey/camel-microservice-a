@@ -5,16 +5,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(name = "routers.file.json.2.activemq-router.on", havingValue = "true")
-public class FileJsonToActiveMqSenderRouter extends RouteBuilder {
+@ConditionalOnProperty(value = "routers.file.xml.2.activemq-router.on", havingValue = "true")
+public class FileXmlToActiveMqSenderRouter  extends RouteBuilder {
     /**
      * @throws Exception
      */
     @Override
     public void configure() throws Exception {
-        from("file:files/json?move=.done&includeExt=json")
+        from("file:files/json?move=.done&includeExt=xml")
                 .log("${body}")
-                // NOTE: queues are not imported by default. you must add the dependency camel-activemq-starter
-                .to("activemq:json-activemq-queue");
+                .to("activemq:xml-activemq-queue");
     }
 }
