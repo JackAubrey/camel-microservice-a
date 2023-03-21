@@ -40,6 +40,22 @@ public class FileToRestApiConsumerRouter extends RouteBuilder {
                     .otherwise()
                         .log("The file ${body} not sent to REST End-Point")
                 .end()
-                .log("${messageHistory}");
+                .to("direct://log-file-values");
+
+        // reusable QUEUE
+        from("direct://log-file-values")
+                .log("${messageHistory}")
+                .log("Full File Name: ${file:name}")
+                .log("File OnlyName: ${file:onlyname}")
+                .log("File Extension: ${file:name.ext}")
+                .log("Simple Extension: ${file:ext}")
+                .log("File Name: ${file:name.noext}")
+                .log("File OnlyName: ${file:onlyname.noext}")
+                .log("Parent: ${file:parent}")
+                .log("Path: ${file:path}")
+                .log("Absolute: ${file:absolute}")
+                .log("Absolute Path: ${file:absolute.path}")
+                .log("Length: ${file:length}")
+                .log("Size: ${file:size}");
     }
 }
