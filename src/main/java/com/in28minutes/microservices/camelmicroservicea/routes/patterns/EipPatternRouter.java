@@ -18,9 +18,11 @@ import java.util.Random;
 public class EipPatternRouter extends RouteBuilder {
     private final Random random = new Random();
     private final SplitterBeanExpression splitterBeanExpression;
+    private final SplitterBeanComponent splitterBeanComponent;
 
-    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression) {
+    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression, SplitterBeanComponent splitterBeanComponent) {
         this.splitterBeanExpression = splitterBeanExpression;
+        this.splitterBeanComponent = splitterBeanComponent;
     }
 
     /**
@@ -66,7 +68,8 @@ public class EipPatternRouter extends RouteBuilder {
                 // >> take a look to the obtained log <<
                 // * Before Split SimpleBeanMessage{message='A new random value', value=6}
                 .log("Before Split: ${body}")
-                .split(splitterBeanExpression)
+//                .split(splitterBeanExpression)
+                .split(method(splitterBeanComponent))// you can do the same in the easiest manner
                 // * First iteration -> After Split: A new
                 // * Second iteration -> After Split:  value
                 // * Third iteration -> After Split: 6
@@ -141,6 +144,11 @@ class SimpleBeanMessage {
 
 @Component
 class SplitterBeanExpression implements Expression {
+    private final SplitterBeanComponent splitterBeanComponent;
+
+    SplitterBeanExpression(SplitterBeanComponent splitterBeanComponent) {
+        this.splitterBeanComponent = splitterBeanComponent;
+    }
 
     /**
      * @param exchange
@@ -155,5 +163,16 @@ class SplitterBeanExpression implements Expression {
         List<String> result = new ArrayList<>(List.of(split));
         result.add(""+bean.getValue());
         return exchange.getContext().getTypeConverter().convertTo(type, exchange, result);
+    }
+}
+
+
+@Component
+class SplitterBeanComponent {
+    public List<String> splitBean(SimpleBeanMessage bean) {
+        String [] split = bean.getMessage().split("\\brandom\\b");
+        List<String> result = new ArrayList<>(List.of(split));
+        result.add(""+bean.getValue());
+        return result;
     }
 }

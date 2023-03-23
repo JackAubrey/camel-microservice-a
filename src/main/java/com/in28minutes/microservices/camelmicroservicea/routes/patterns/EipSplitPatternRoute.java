@@ -22,8 +22,11 @@ public class EipSplitPatternRoute extends RouteBuilder {
                         .stop()
                 .end()
                 // every single item will be sent as single message
+                // .log("Before ${body}")
+                // .convertBodyTo(String.class) <- since the body is an ArryList, without this one the split by comma would not affect.
                 .log("Before Split: ${body}")
-                .split(body())
+                //.split(body(), ",") <-- this one take its affect jut if you convert into string the body before
+                .split(body()) //
                 .log("After Split: ${body}")
                 .marshal().json(JsonLibrary.Jackson, String.class)
                 .multicast()
