@@ -1,5 +1,6 @@
 package com.in28minutes.microservices.camelmicroservicea.routes.patterns;
 
+import com.in28minutes.microservices.camelmicroservicea.routes.patterns.strategies.AggregationListStrategy;
 import org.apache.camel.Exchange;
 import org.apache.camel.Expression;
 import org.apache.camel.builder.RouteBuilder;
@@ -20,9 +21,12 @@ public class EipPatternRouter extends RouteBuilder {
     private final SplitterBeanExpression splitterBeanExpression;
     private final SplitterBeanComponent splitterBeanComponent;
 
-    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression, SplitterBeanComponent splitterBeanComponent) {
+    private final OnlyPairIntValueFilter onlyIntValueFilter;
+
+    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression, SplitterBeanComponent splitterBeanComponent, OnlyPairIntValueFilter onlyIntValueFilter) {
         this.splitterBeanExpression = splitterBeanExpression;
         this.splitterBeanComponent = splitterBeanComponent;
+        this.onlyIntValueFilter = onlyIntValueFilter;
     }
 
     /**
@@ -48,7 +52,7 @@ public class EipPatternRouter extends RouteBuilder {
                 // Decision based on Content to route to other endpoint.
                 // in this very simple case, if the bean contains a pair or odd number will be logged by a specific log endpoint.
                 .choice()
-                    .when(b -> b.getMessage().getBody(SimpleBeanMessage.class).getValue() % 2 == 0)
+                    .when(b -> b.getMessage().getBody(SimpleBeanMessage.class).isPair())
                         .log("${body} is pair")
                     .otherwise()
                         .log("${body} is odd")
@@ -67,13 +71,13 @@ public class EipPatternRouter extends RouteBuilder {
                 //
                 // >> take a look to the obtained log <<
                 // * Before Split SimpleBeanMessage{message='A new random value', value=6}
-                .log("Before Split: ${body}")
+//                .log("Before Split: ${body}")
 //                .split(splitterBeanExpression)
                 .split(method(splitterBeanComponent))// you can do the same in the easiest manner
                 // * First iteration -> After Split: A new
                 // * Second iteration -> After Split:  value
                 // * Third iteration -> After Split: 6
-                .log("After Split: ${body}")
+//                .log("After Split: ${body}")
                 // So since we are going to use a multicast for each iteration will obtain
                 // * First Iteration
                 //      first-log                                : Exchange[ExchangePattern: InOnly, BodyType: String, Body: A new ]
@@ -112,8 +116,45 @@ public class EipPatternRouter extends RouteBuilder {
                 // so this means, if you don't use multicast, ol the child end-points will be execute sequentially
                 // if you use "multicast" a copy of source message will be sent to the children at the same time.
                 // for example you could send a copy of the source message to: activemq, rest-api end so on at the same time.
-                .multicast()
-                .to("log:first-log", "log:second-log", "log:third-log");
+
+                // [EIP: Aggregation]
+                // this patter is the opposite of Split one
+                // message will be aggregate by a term condition and sent as single message to the end-points
+                // taking a look to what we documented upon, the bean message has been split in tre parts, 2 fixed and one variable.
+                //  ["A new", "value", X]
+                // where the X is the dynamic value generated for each timer tick.
+                // now we are going to aggregate by pair values
+                // TAKE A LOOK to EipAggregatePattern01Route to see a more appropriated example
+                //.filter().method(onlyIntValueFilter)
+                // 0 - remember that the source inline message has been split
+                //      this means:
+                //       - the source bean: SimpleBeanMessage{message='A new random value', value=1234}
+                //       - wil be transformed by our custom split component in a LIST ['A new', 'value, '1234', 'pair']
+                //       - all the single list items will be used as single message
+                // 1 - we are filtering split message in order to take only those that are equals to 'pair'
+                // 2 - aggregate every single body message received from the filter
+                // 3 - if we found 3 message equals to 'pair' we produce a single aggregation message
+                .filter(simple("${body} == 'pair'"))
+                    .aggregate(simple("${body}"), new AggregationListStrategy())
+                    .completionSize(3) // here we are specifying that every 3 messages we have aggregate, we must send one
+                    .to("log:first-log"/*, "log:second-log", "log:third-log"*/)
+                .end();
+    }
+}
+
+@Component
+class OnlyPairIntValueFilter {
+    public boolean filterOnlyInt(Object value) {
+        if(value == null) {
+            return false;
+        }  else {
+            try {
+                Integer.parseInt(value.toString());
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
     }
 }
 
@@ -121,8 +162,15 @@ class SimpleBeanMessage {
     private String message = "A new random value";
     private int value;
 
+    private boolean pair;
+
     public SimpleBeanMessage(int value) {
         this.value = value;
+        this.pair = this.value % 2 == 0;
+    }
+
+    public boolean isPair() {
+        return pair;
     }
 
     public String getMessage() {
@@ -159,9 +207,7 @@ class SplitterBeanExpression implements Expression {
     @Override
     public <T> T evaluate(Exchange exchange, Class<T> type) {
         SimpleBeanMessage bean = exchange.getMessage().getBody(SimpleBeanMessage.class);
-        String [] split = bean.getMessage().split("\\brandom\\b");
-        List<String> result = new ArrayList<>(List.of(split));
-        result.add(""+bean.getValue());
+        List<String> result = splitterBeanComponent.splitBean(bean);
         return exchange.getContext().getTypeConverter().convertTo(type, exchange, result);
     }
 }
@@ -173,6 +219,8 @@ class SplitterBeanComponent {
         String [] split = bean.getMessage().split("\\brandom\\b");
         List<String> result = new ArrayList<>(List.of(split));
         result.add(""+bean.getValue());
+        result.add(""+(bean.isPair() ? "pair" : "odd"));
         return result;
     }
 }
+
