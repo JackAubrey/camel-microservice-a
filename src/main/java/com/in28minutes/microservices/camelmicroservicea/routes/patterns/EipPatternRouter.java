@@ -1,15 +1,19 @@
 package com.in28minutes.microservices.camelmicroservicea.routes.patterns;
 
 import com.in28minutes.microservices.camelmicroservicea.routes.patterns.strategies.AggregationListStrategy;
-import org.apache.camel.Exchange;
-import org.apache.camel.Expression;
+import org.apache.camel.*;
 import org.apache.camel.builder.RouteBuilder;
+import org.slf4j.Logger;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.stream.Collectors;
+
+import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * Example router which the goal to show and document some Camel Enterprise Integration Patterns (EIP)
@@ -20,13 +24,14 @@ public class EipPatternRouter extends RouteBuilder {
     private final Random random = new Random();
     private final SplitterBeanExpression splitterBeanExpression;
     private final SplitterBeanComponent splitterBeanComponent;
-
     private final OnlyPairIntValueFilter onlyIntValueFilter;
+    private final DynamicRoutingComponent dynamicRoutingComponent;
 
-    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression, SplitterBeanComponent splitterBeanComponent, OnlyPairIntValueFilter onlyIntValueFilter) {
+    public EipPatternRouter(SplitterBeanExpression splitterBeanExpression, SplitterBeanComponent splitterBeanComponent, OnlyPairIntValueFilter onlyIntValueFilter, DynamicRoutingComponent dynamicRoutingComponent) {
         this.splitterBeanExpression = splitterBeanExpression;
         this.splitterBeanComponent = splitterBeanComponent;
         this.onlyIntValueFilter = onlyIntValueFilter;
+        this.dynamicRoutingComponent = dynamicRoutingComponent;
     }
 
     /**
@@ -38,7 +43,7 @@ public class EipPatternRouter extends RouteBuilder {
         // by default, starting the "from" we are using the PipelinePattern
         // all the piped command are going to compose our pipeline.
         // a pipeline is a sequence of steps
-        from("timer:multicast-timer?period=3000")
+        from("timer:multicast-timer?period=20000")
                 //.pipeline() <- is not necessary because is by default. we are showing just to better understand the pipeline concept
 
                 // not necessary. Jus to have a quick understanding of which route is running
@@ -139,6 +144,34 @@ public class EipPatternRouter extends RouteBuilder {
                     .completionSize(3) // here we are specifying that every 3 messages we have aggregate, we must send one
                     .to("log:first-log"/*, "log:second-log", "log:third-log"*/)
                 .end();
+
+        // [EIP: Routing Slip]
+        // this is similar to multicast but patter permit us to dynamically choose where route
+        // try to play with the list of endpoints: if we use just endpoint1 and endpoint3, only these will be invoked
+        String endpoint1 = "direct:routSlip01";
+        String endpoint2 = "direct:routSlip02";
+        String endpoint3 = "direct:routSlip03";
+        String routingSlipEndpoints = List.of(endpoint1, endpoint2, endpoint3).stream().collect(Collectors.joining(","));
+        from("timer:routing-slip-timer?period=30000")
+                .transform(simple("Fired Event at ${header.CamelMessageTimestamp}"))
+                .log("${body}")
+                .routingSlip(simple(routingSlipEndpoints));
+
+        // [EIP: Dynamic Routing]
+        // this one is similar to the RoutingSlip but call an end-point by a logic and continue to do this until it receive a NULL
+        from("timer:routing-slip-timer?period=1000")
+                .transform(simple("Fired Event at ${header.CamelMessageTimestamp}"))
+                        .dynamicRouter(method(dynamicRoutingComponent));
+
+        // these 3 "direct" endpoint will be dynamically invoked by the router-slip or by the DynamicRouter
+        from(endpoint1)
+                .to("log:log-routing-slip-01");
+
+        from(endpoint2)
+                .to("log:log-routing-slip-02");
+
+        from(endpoint3)
+                .to("log:log-routing-slip-03");
     }
 }
 
@@ -224,3 +257,35 @@ class SplitterBeanComponent {
     }
 }
 
+@Component
+class DynamicRoutingComponent {
+    private int count = 0;
+    private static final String endpoint1 = "direct:routSlip01";
+    private static final String endpoint2 = "direct:routSlip02";
+    private static final String endpoint3 = "direct:routSlip03";
+
+    private static final List<String> paths = List.of(
+            endpoint1,
+            endpoint2,
+            endpoint2 +"," + endpoint1,
+            endpoint1 +"," + endpoint3,
+            endpoint1 +"," + endpoint3 +"," + endpoint3,
+            endpoint3
+    );
+    private static final Logger logger = getLogger(DynamicRoutingComponent.class);
+
+    // we show here in this little example some parameter we want to be injected in order to take our decision
+    public String decideTheNextEndpoint(@Body String body,
+                                        @Headers Map<String, Object> headers,
+                                        @ExchangeProperties Map<String, Object> exProperties) {
+        logger.info("Invoked Counter = {}", count);
+        String endPoints = null;
+        if(count < paths.size()) {
+            endPoints = paths.get(count);
+            count++;
+        } else {
+            count = 0;
+        }
+        return endPoints;
+    }
+}
