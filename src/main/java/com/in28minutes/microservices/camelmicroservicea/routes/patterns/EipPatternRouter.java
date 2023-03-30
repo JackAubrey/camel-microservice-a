@@ -100,27 +100,14 @@ public class EipPatternRouter extends RouteBuilder {
                 // [EIP: Multicast]
                 // here we can se another EIP: Multicast!!
                 // multicast EIP send A COPY of the original message to all its child output
-                // to better understand this concept, look the history logs.
-                //
-                // >> if you comment the "multicast" operation you'll obtain <<
-                // Source                                   ID                             Processor                                          Elapsed (ms)
-                //                                         MultiCastTimerRouteId/MultiCas from[timer://multicast-timer?period=3000]               1121318
-                //                                         MultiCastTimerRouteId/transfor transform[constant{A value}]                                  2
-                //                                         MultiCastTimerRouteId/to1      log:first-log                                                 2
-                //                                         MultiCastTimerRouteId/to2      log:second-log                                                0
-                //                                         MultiCastTimerRouteId/to3      log:third-log                                                 0
-                //                                         MultiCastTimerRouteId/log1     log                                                           0
-                //
-                // >> if you enable the "multicast" <<
-                // Source                                   ID                             Processor                                          Elapsed (ms)
-                //                                         MultiCastTimerRouteId/MultiCas from[timer://multicast-timer?period=3000]               1261830
-                //                                         MultiCastTimerRouteId/transfor transform[constant{A value}]                                  3
-                //                                         MultiCastTimerRouteId/multicas multicast                                                     0
-                //                                         MultiCastTimerRouteId/log1     log                                                           0
-                //
-                // so this means, if you don't use multicast, ol the child end-points will be execute sequentially
-                // if you use "multicast" a copy of source message will be sent to the children at the same time.
-                // for example you could send a copy of the source message to: activemq, rest-api end so on at the same time.
+                // in the example below the messages will be multicasted in a separated threads
+                // the "end()" permit to use to wait the end of X, Y, Z endpoint before to proceed to the next step
+                // .multicast().parallelProcessing()
+                //    .to("direct:x")
+                //    .to("direct:y")
+                //    .to("direct:z")
+                //  .end()
+                //  .to("mock:result")
 
                 // [EIP: Aggregation]
                 // this patter is the opposite of Split one
@@ -157,15 +144,20 @@ public class EipPatternRouter extends RouteBuilder {
                 .log("${body}")
                 .routingSlip(simple(routingSlipEndpoints));
 
+        // NOTE: here we are showing the properties usage also.
+        // is possible to refer to the properties defined in the application.properties putting them in a double square bracket
+        // look "routing-slip-time-period-property" and "endpoint-logging-01-property". both are simple examples of this usage
         // [EIP: Dynamic Routing]
         // this one is similar to the RoutingSlip but call an end-point by a logic and continue to do this until it receive a NULL
-        from("timer:routing-slip-timer?period=1000")
+        from("timer:routing-slip-timer?period={{routing-slip-time-period-property}}")
                 .transform(simple("Fired Event at ${header.CamelMessageTimestamp}"))
                         .dynamicRouter(method(dynamicRoutingComponent));
 
         // these 3 "direct" endpoint will be dynamically invoked by the router-slip or by the DynamicRouter
         from(endpoint1)
-                .to("log:log-routing-slip-01");
+                // here you can see end-point logging configured over application.properties
+                // take a look to the form: the property name is double rounded by a square brackets
+                .to("{{endpoint-logging-01-property}}");
 
         from(endpoint2)
                 .to("log:log-routing-slip-02");
